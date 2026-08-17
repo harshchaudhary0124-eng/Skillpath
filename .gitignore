@@ -1,0 +1,19 @@
+# Dependencies (not used in this bare Framer-component repo, ignored defensively)
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
