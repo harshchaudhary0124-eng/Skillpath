@@ -101,6 +101,10 @@ const COMPONENT_CSS = `
 }
 @media (max-width: 559px) {
     .${TOOLBAR_CLASS} { flex-direction: column; }   /* mobile: stack */
+    /* In a column flex, a "flex: 1 1 240px" basis becomes a 240px MAIN-AXIS
+       (height) — the source of the tall empty box. Reset it so the wrapper
+       hugs the input height and the icon stays centered inside it. */
+    .${SEARCH_CLASS} { flex: 0 0 auto; width: 100%; }
     .${SORT_CLASS} { width: 100%; }
 }
 `
