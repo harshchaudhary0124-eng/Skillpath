@@ -1,31 +1,15 @@
-// Skillpath — Courses Section (Framer Code Component)
-//
-// Renders a live course catalog from the assignment API with four course
-// states (loading / error / empty / ready) and best-effort currency.
-//
-// Architecture reference: see DECISIONS.md at the repo root.
+// Skillpath — Courses Section (Framer code component)
 
 import { useEffect, useState } from "react"
 import type { CSSProperties } from "react"
 import { addPropertyControls, ControlType } from "framer"
 
-// ---------------------------------------------------------------------------
-// API reference
-// Verified live with GET-only requests before implementation (see DECISIONS.md).
-// ---------------------------------------------------------------------------
 const API_BASE_URL = "https://syncsphere-hiv6.onrender.com"
 const COURSES_ENDPOINT = `${API_BASE_URL}/assignment/course-data`
 const COUNTRY_ENDPOINT = `${API_BASE_URL}/assignment/country-code`
 
-// Number of placeholder cards shown while courses load. The real count is
-// unknown until the request resolves, so this is a display-only value.
 const SKELETON_COUNT = 6
 
-// Responsive grid — explicit 3 / 2 / 1 columns (desktop / tablet / mobile).
-// Column count is driven purely by CSS media queries (no JS width detection),
-// so it is defined at every intermediate width. Fixed `repeat(N, 1fr)` tracks
-// keep every card the same width for any 5–10 count: a short final row stays
-// left-aligned instead of stretching a lone card across the row.
 const GRID_CLASS = "skillpath-courses-grid"
 const GRID_CSS = `
 .${GRID_CLASS} {
@@ -45,11 +29,8 @@ const GRID_CSS = `
 }
 `
 
-// Rules that can't be expressed as inline styles, in one injected sheet:
-//  - responsive padding for the section and cards (media queries)
-//  - the card skin (border/shadow) — kept here, not inline, so the :hover rule
-//    can actually override it (inline styles would win over a CSS :hover)
-//  - the hover lift itself (a :hover pseudo), disabled under reduced-motion
+// Media queries and :hover can't be inline styles. The card skin lives here
+// too, so the :hover rule can override it (an inline style would win).
 const SECTION_CLASS = "skillpath-courses-section"
 const CARD_BASE_CLASS = "skillpath-card"
 const CARD_HOVER_CLASS = "skillpath-course-card"
@@ -91,7 +72,7 @@ const COMPONENT_CSS = `
 }
 .${SEARCH_CLASS} {
     position: relative;
-    flex: 1 1 240px;               /* grows; search + sort share one row */
+    flex: 1 1 240px;
 }
 .${SORT_CLASS} {
     flex: 0 0 auto;
@@ -100,19 +81,13 @@ const COMPONENT_CSS = `
     color: #98A2B3;
 }
 @media (max-width: 559px) {
-    .${TOOLBAR_CLASS} { flex-direction: column; }   /* mobile: stack */
-    /* In a column flex, a "flex: 1 1 240px" basis becomes a 240px MAIN-AXIS
-       (height) — the source of the tall empty box. Reset it so the wrapper
-       hugs the input height and the icon stays centered inside it. */
+    .${TOOLBAR_CLASS} { flex-direction: column; }
+    /* reset the row-basis so the stacked wrapper hugs the input height */
     .${SEARCH_CLASS} { flex: 0 0 auto; width: 100%; }
     .${SORT_CLASS} { width: 100%; }
 }
 `
 
-// ---------------------------------------------------------------------------
-// Domain types
-// The Course shape is the exact contract confirmed against the live API.
-// ---------------------------------------------------------------------------
 interface Course {
     courseName: string
     courseCode: string
@@ -126,33 +101,23 @@ interface Course {
     refundable: boolean
 }
 
-// The two price fields map to two currencies. They are never converted
-// against each other — the country endpoint only selects which one to show.
+// The two price fields are never converted between currencies.
 type Currency = "INR" | "USD"
 
-// Independent state models.
-// Courses is the CRITICAL dependency: without it there is no grid to render.
+// Courses is the critical dependency: no courses, no grid.
 type CoursesState =
     | { status: "loading" }
     | { status: "error" }
     | { status: "empty" }
     | { status: "ready"; courses: Course[] }
 
-// Country is BEST-EFFORT: it only decides currency. On failure the grid still
-// renders and prices show as temporarily unavailable (see DECISIONS.md #4).
+// Country is best-effort: it only selects the currency.
 type CountryState =
     | { status: "loading" }
     | { status: "error" }
     | { status: "ready"; currency: Currency }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// GET a URL and return its parsed JSON body.
-// Failures arrive as HTTP status codes (404/500), which fetch RESOLVES rather
-// than rejects — so response.ok is checked explicitly. A non-OK status or an
-// unparseable body both throw, surfacing to the caller's catch as an error.
+// 404/500 resolve rather than reject, so check response.ok explicitly.
 async function fetchJson(url: string, signal: AbortSignal): Promise<unknown> {
     const response = await fetch(url, { method: "GET", signal })
     if (!response.ok) {
@@ -161,8 +126,7 @@ async function fetchJson(url: string, signal: AbortSignal): Promise<unknown> {
     return response.json()
 }
 
-// Map the country payload to a currency. Returns null for any unexpected shape
-// or value — the country is deliberately never defaulted to INR or USD.
+// Unknown code → null; the currency is never defaulted.
 function toCurrency(data: unknown): Currency | null {
     const code = (data as { country_code?: unknown } | null)?.country_code
     if (code === "IN") return "INR"
@@ -170,10 +134,7 @@ function toCurrency(data: unknown): Currency | null {
     return null
 }
 
-// Format a course's price in the given currency using the platform formatter.
-// The correct field is chosen by currency; the two are never converted.
-// Intl.NumberFormat handles the symbol, decimals, and digit grouping (e.g.
-// ₹1,999.00 with Indian grouping, $39.99) so no string is built by hand.
+// Field chosen by currency; values are in paise/cents, so divide by 100.
 function formatPrice(course: Course, currency: Currency): string {
     if (currency === "INR") {
         return new Intl.NumberFormat("en-IN", {
@@ -187,11 +148,9 @@ function formatPrice(course: Course, currency: Currency): string {
     }).format(course.priceUsdCents / 100)
 }
 
-// Sort options exposed by the toolbar. "recommended" preserves the API's order.
+// "recommended" preserves the API's original order.
 type SortOption = "recommended" | "price-asc" | "price-desc"
 
-// Case-insensitive filter across the three learner-facing text fields. Returns
-// a NEW array (never mutates the source); an empty query returns all courses.
 function filterCourses(courses: Course[], query: string): Course[] {
     const q = query.trim().toLowerCase()
     if (q === "") return courses
@@ -203,17 +162,13 @@ function filterCourses(courses: Course[], query: string): Course[] {
     )
 }
 
-// The price to sort by, chosen by the active currency (the two are never
-// converted). Returns null when there is no currency yet or the value isn't a
-// usable number, so those courses can be pushed to the end without breaking.
+// null when currency/price is unavailable, so it can sort to the end.
 function priceValue(course: Course, currency: Currency | null): number | null {
     if (currency === null) return null
     const raw = currency === "INR" ? course.pricePaise : course.priceUsdCents
     return Number.isFinite(raw) ? raw : null
 }
 
-// Returns a NEW sorted array (source untouched). "recommended" keeps API order;
-// price sorts push unavailable prices to the end in either direction.
 function sortCourses(
     courses: Course[],
     sortOption: SortOption,
@@ -231,17 +186,13 @@ function sortCourses(
     })
 }
 
-// Soft focus ring in the accent color. Falls back to a neutral ring if the
-// accent isn't a 6-digit hex (Framer's Color control can return rgba()).
+// Neutral fallback when accent isn't a 6-digit hex (Framer may return rgba).
 function focusRing(accent: string): string {
     return /^#[0-9a-fA-F]{6}$/.test(accent)
         ? `0 0 0 3px ${accent}22`
         : "0 0 0 3px rgba(15, 23, 42, 0.08)"
 }
 
-// ---------------------------------------------------------------------------
-// Component props — driven entirely by the Framer property controls below.
-// ---------------------------------------------------------------------------
 interface CourseSectionProps {
     accentColor: string
     heading: string
@@ -254,8 +205,6 @@ interface CourseSectionProps {
 export default function CourseSection(props: CourseSectionProps) {
     const { accentColor, heading } = props
 
-    // Two independent state slices. Courses is the critical dependency;
-    // country is best-effort and only decides currency. Both start loading.
     const [coursesState, setCoursesState] = useState<CoursesState>({
         status: "loading",
     })
@@ -263,18 +212,15 @@ export default function CourseSection(props: CourseSectionProps) {
         status: "loading",
     })
 
-    // Reload counters: bumping one re-runs only that request's effect, which is
-    // how each Retry action refetches independently without a page reload.
+    // Bump a counter to re-run only that request's effect (independent retry).
     const [coursesReload, setCoursesReload] = useState(0)
     const [countryReload, setCountryReload] = useState(0)
 
-    // Client-side view controls — operate only on the already-fetched courses,
-    // never trigger a request, and never mutate the source array.
+    // Filter/sort operate on already-fetched courses; they never refetch.
     const [searchQuery, setSearchQuery] = useState("")
     const [sortOption, setSortOption] = useState<SortOption>("recommended")
     const [searchFocused, setSearchFocused] = useState(false)
 
-    // Courses request — decides whether there is a grid at all.
     useEffect(() => {
         const controller = new AbortController()
         setCoursesState({ status: "loading" })
@@ -283,8 +229,7 @@ export default function CourseSection(props: CourseSectionProps) {
             try {
                 const data = await fetchJson(COURSES_ENDPOINT, controller.signal)
                 if (controller.signal.aborted) return
-                // A failed request can return a JSON object instead of an array;
-                // validate before treating it as Course[].
+                // A failed request can return a JSON object, not an array.
                 if (!Array.isArray(data)) {
                     setCoursesState({ status: "error" })
                     return
@@ -304,7 +249,6 @@ export default function CourseSection(props: CourseSectionProps) {
         return () => controller.abort()
     }, [coursesReload])
 
-    // Country request — only decides currency. Never touches course state.
     useEffect(() => {
         const controller = new AbortController()
         setCountryState({ status: "loading" })
@@ -332,8 +276,6 @@ export default function CourseSection(props: CourseSectionProps) {
     const retryCourses = () => setCoursesReload((n) => n + 1)
     const retryCountry = () => setCountryReload((n) => n + 1)
 
-    // Search + sort toolbar. Rendered only inside the ready state (below), so it
-    // never overlays or interferes with the loading / error / empty UIs.
     function renderToolbar() {
         return (
             <div className={TOOLBAR_CLASS}>
@@ -383,8 +325,6 @@ export default function CourseSection(props: CourseSectionProps) {
         )
     }
 
-    // Body is chosen by the CRITICAL course state. Country state only matters
-    // once courses are ready (it affects the price area inside each card).
     function renderBody() {
         switch (coursesState.status) {
             case "loading":
@@ -426,7 +366,6 @@ export default function CourseSection(props: CourseSectionProps) {
                 )
 
             case "ready": {
-                // Derived, non-mutating view of the already-fetched courses.
                 const currency =
                     countryState.status === "ready" ? countryState.currency : null
                 const filtered = filterCourses(coursesState.courses, searchQuery)
@@ -450,8 +389,7 @@ export default function CourseSection(props: CourseSectionProps) {
                             </div>
                         )}
                         {visible.length === 0 ? (
-                            // Search produced no matches — distinct from the API
-                            // "empty" state (which means the API returned zero).
+                            // Distinct from the API "empty" state.
                             <div style={styles.stateBlock}>
                                 <p style={styles.stateTitle}>No courses found</p>
                                 <p style={styles.stateText}>Try a different search.</p>
@@ -476,10 +414,8 @@ export default function CourseSection(props: CourseSectionProps) {
 
     return (
         <section className={SECTION_CLASS} style={styles.section}>
-            {/* Grid, responsive padding, card skin + hover (can't be inline) */}
             <style>{GRID_CSS + COMPONENT_CSS}</style>
 
-            {/* Section header — driven by the `heading` and `accentColor` controls */}
             <header style={styles.header}>
                 <h2 style={styles.heading}>{heading}</h2>
                 <div style={{ ...styles.accentBar, backgroundColor: accentColor }} />
@@ -490,9 +426,6 @@ export default function CourseSection(props: CourseSectionProps) {
     )
 }
 
-// ---------------------------------------------------------------------------
-// CourseCard — one course. Price area depends on the best-effort country state.
-// ---------------------------------------------------------------------------
 interface CourseCardProps {
     course: Course
     countryState: CountryState
@@ -500,8 +433,6 @@ interface CourseCardProps {
 }
 
 function CourseCard({ course, countryState, accentColor }: CourseCardProps) {
-    // The price area reflects the country slice: loading → skeleton,
-    // error → "Price unavailable" (never a defaulted currency), ready → format.
     function renderPrice() {
         if (countryState.status === "loading") {
             return <span style={styles.priceSkeleton} aria-hidden="true" />
@@ -530,11 +461,8 @@ function CourseCard({ course, countryState, accentColor }: CourseCardProps) {
                 )}
             </div>
             <h3 style={styles.courseName}>{course.courseName}</h3>
-            {/* Two-line clamp is CSS-only (see styles.description); the full
-                string is passed through untouched. */}
             <p style={styles.description}>{course.description}</p>
             <div style={styles.cardFooter}>
-                {/* courseType: one extra API field, kept clearly secondary */}
                 <span style={styles.courseType}>{course.courseType}</span>
                 {renderPrice()}
             </div>
@@ -542,10 +470,6 @@ function CourseCard({ course, countryState, accentColor }: CourseCardProps) {
     )
 }
 
-// ---------------------------------------------------------------------------
-// SkeletonCard — a static placeholder that mirrors the CourseCard layout so
-// the loading state communicates the eventual structure (no animation).
-// ---------------------------------------------------------------------------
 function SkeletonCard() {
     return (
         <article className={CARD_BASE_CLASS} style={styles.card} aria-hidden="true">
@@ -570,13 +494,8 @@ function SkeletonCard() {
     )
 }
 
-// ---------------------------------------------------------------------------
-// Styles — inline objects (Framer idiom, no external CSS).
-// The responsive grid itself lives in GRID_CSS above (media queries can't be
-// expressed as inline styles); everything else is inline.
-// ---------------------------------------------------------------------------
 const styles: Record<string, CSSProperties> = {
-    // Padding is applied responsively via SECTION_CLASS in COMPONENT_CSS.
+    // padding is set responsively in SECTION_CLASS
     section: {
         width: "100%",
         boxSizing: "border-box",
@@ -591,7 +510,6 @@ const styles: Record<string, CSSProperties> = {
     },
     heading: {
         margin: 0,
-        // Fluid size keeps the hierarchy strong on desktop and calm on mobile.
         fontSize: "clamp(26px, 3.4vw, 36px)",
         fontWeight: 720,
         letterSpacing: -0.5,
@@ -608,16 +526,15 @@ const styles: Record<string, CSSProperties> = {
         maxWidth: 1200,
         margin: "0 auto",
     },
-    // Toolbar controls — same border/radius/typography language as the cards.
     searchInput: {
         width: "100%",
         boxSizing: "border-box",
-        padding: "11px 14px 11px 38px", // left room for the search icon
+        padding: "11px 14px 11px 38px", // left room for the icon
         fontSize: 14,
         fontFamily: "inherit",
         color: "#101828",
         backgroundColor: "#FFFFFF",
-        border: "1px solid #EAECF0", // borderColor overridden inline on focus
+        border: "1px solid #EAECF0", // overridden inline on focus
         borderRadius: 12,
         outline: "none",
         transition: "border-color 140ms ease, box-shadow 140ms ease",
@@ -641,12 +558,11 @@ const styles: Record<string, CSSProperties> = {
         cursor: "pointer",
         outline: "none",
     },
-    // Card — layout only. The visual skin (padding/border/radius/shadow) and the
-    // hover live in COMPONENT_CSS via CARD_BASE_CLASS / CARD_HOVER_CLASS.
+    // layout only; skin and hover live in COMPONENT_CSS
     card: {
         display: "flex",
         flexDirection: "column",
-        height: "100%", // fill the stretched grid cell → equal heights per row
+        height: "100%", // fill the grid cell for equal-height rows
         boxSizing: "border-box",
     },
     cardTop: {
@@ -681,7 +597,7 @@ const styles: Record<string, CSSProperties> = {
         lineHeight: 1.35,
         letterSpacing: -0.2,
         color: "#101828",
-        overflowWrap: "break-word", // guard against long unbroken tokens
+        overflowWrap: "break-word",
     },
     description: {
         margin: 0,
@@ -689,14 +605,14 @@ const styles: Record<string, CSSProperties> = {
         lineHeight: 1.55,
         color: "#475467",
         overflowWrap: "break-word",
-        // CSS two-line clamp — the string itself is never truncated in JS.
+        // CSS two-line clamp
         display: "-webkit-box",
         WebkitBoxOrient: "vertical",
         WebkitLineClamp: 2,
         overflow: "hidden",
     },
     cardFooter: {
-        marginTop: "auto", // pins the price row to the bottom of every card
+        marginTop: "auto", // pin the price row to the card bottom
         display: "flex",
         alignItems: "baseline",
         justifyContent: "space-between",
@@ -708,7 +624,7 @@ const styles: Record<string, CSSProperties> = {
         fontSize: 12,
         fontWeight: 600,
         letterSpacing: 0.2,
-        color: "#667085", // clearly secondary to the price
+        color: "#667085",
         whiteSpace: "nowrap",
     },
     price: {
@@ -731,15 +647,11 @@ const styles: Record<string, CSSProperties> = {
         borderRadius: 6,
         backgroundColor: "#EAECF0",
     },
-
-    // Skeleton block (loading)
     skeleton: {
         display: "inline-block",
         borderRadius: 6,
         backgroundColor: "#EAECF0",
     },
-
-    // Course error / empty blocks
     stateBlock: {
         display: "flex",
         flexDirection: "column",
@@ -774,8 +686,6 @@ const styles: Record<string, CSSProperties> = {
         fontWeight: 600,
         cursor: "pointer",
     },
-
-    // Country-error price banner
     banner: {
         display: "flex",
         alignItems: "center",
@@ -806,10 +716,6 @@ const styles: Record<string, CSSProperties> = {
     },
 }
 
-// ---------------------------------------------------------------------------
-// Framer property controls.
-// Two designer-facing controls, both wired to the render above.
-// ---------------------------------------------------------------------------
 addPropertyControls(CourseSection, {
     accentColor: {
         type: ControlType.Color,
